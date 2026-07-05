@@ -108,12 +108,31 @@ def main():
         res[f'{prefix}_gamma'] = g
         res[f'{prefix}_psi'] = p
         if stat in ["optimal", "optimal_inaccurate"]:
-            eps, _, _, _, _, _, _, dmin = compute_ultimate_bound(P, Y, tau, [A], H, C, g, w_bar, v_bar, p)
+            eps, rho, c, alpha, th_Y, d_bar, theta, dmin = compute_ultimate_bound(P, Y, tau, [A], H, C, g, w_bar, v_bar, p)
             res[f'{prefix}_feas'] = "Y"
             res[f'{prefix}_lmin'] = np.min(np.linalg.eigvalsh(P))
             res[f'{prefix}_lmax'] = np.max(np.linalg.eigvalsh(P))
             res[f'{prefix}_eps'] = eps
             res[f'{prefix}_dmin'] = dmin
+            if prefix == 'pl':
+                import json
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                # Compute K_tr
+                k_half = np.log(0.1 * eps / (np.sqrt(res['pl_lmax'] / res['pl_lmin']) * 1.0)) / np.log(rho) if rho > 0 else 0
+                K_tr = int(np.ceil(2 * k_half)) if k_half > 0 else 0
+                
+                K_pl = np.linalg.inv(P) @ Y
+                np.savez(cache_dir / "design.npz",
+                         A=A, C=C, P=P, Y=Y, K=K_pl, X_bounds=x_bounds,
+                         x_nom=x_nom, u_nom=u_nom, H=H)
+                
+                meta = {
+                    "epsilon": eps, "rho": rho, "gamma": g, "psi_bar": p,
+                    "delta_min": dmin, "K_tr": K_tr, "theta_global": theta,
+                    "solver_used": stat, "mode": "smoke" if is_smoke else "full"
+                }
+                with open(cache_dir / "design_meta.json", "w") as f_meta:
+                    json.dump(meta, f_meta, indent=2)
         else:
             res[f'{prefix}_feas'] = "N"
             res[f'{prefix}_lmin'] = 0.0
