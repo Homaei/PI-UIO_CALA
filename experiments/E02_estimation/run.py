@@ -51,14 +51,17 @@ def main():
     
     wilcoxon_p = 1.0
     
-    for seed in range(seeds):
-        np.random.seed(seed)
-        for scen in scenarios:
-            Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
+    for scen in scenarios:
+        # Load scenario and design ONCE per scenario
+        Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
+        H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
+        
+        for seed in range(seeds):
+            np.random.seed(seed)
             
-            H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
             pi_uio = PI_UIO(sim, H_S, K_S, C, P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
-                            v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
+                            v_bar=design.get("v_bar", 0.01), w_bar=design.get("w_bar", 0.01), 
+                            X_bounds=design["X_bounds"], rho=design["rho"])
             auio = AdaptiveSwitchingUIO([pi_uio, pi_uio])
             
             x_true = extract_x_true(Y_true)

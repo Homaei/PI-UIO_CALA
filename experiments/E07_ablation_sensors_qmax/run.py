@@ -40,7 +40,8 @@ def main():
         H_S, K_S, P_S, eps_S = build_H_K_for_support(design, valid_E)
         
         pi_uio = PI_UIO(sim, H_S, K_S, design["C"], P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
-                        v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
+                        v_bar=design.get("v_bar", 0.01), w_bar=design.get("w_bar", 0.01), 
+                        X_bounds=design["X_bounds"], rho=design["rho"])
         
         x_true = extract_x_true(Y_true)
         T = len(flags)

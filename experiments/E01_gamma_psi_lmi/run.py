@@ -129,6 +129,7 @@ def main():
                 meta = {
                     "epsilon": eps, "rho": rho, "gamma": g, "psi_bar": p,
                     "delta_min": dmin, "K_tr": K_tr, "theta_global": theta,
+                    "w_bar": w_bar, "v_bar": v_bar,
                     "solver_used": stat, "mode": "smoke" if is_smoke else "full"
                 }
                 with open(cache_dir / "design_meta.json", "w") as f_meta:

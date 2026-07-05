@@ -43,15 +43,18 @@ def main():
     rf = StructuralRFDetector()
     dt_ids = DTIDSDetector()
     
-    for seed in range(seeds):
-        np.random.seed(seed)
-        for scen in scenarios:
-            Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
-            T = len(flags)
+    for scen in scenarios:
+        Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
+        T = len(flags)
+        
+        H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
+        
+        for seed in range(seeds):
+            np.random.seed(seed)
             
-            H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
             pi_uio = PI_UIO(sim, H_S, K_S, C, P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
-                            v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
+                            v_bar=design.get("v_bar", 0.01), w_bar=design.get("w_bar", 0.01), 
+                            X_bounds=design["X_bounds"], rho=design["rho"])
             
             y_pred_c = np.zeros(T)
             y_pred_cv = np.zeros(T)

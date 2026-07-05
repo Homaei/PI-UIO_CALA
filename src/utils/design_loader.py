@@ -34,9 +34,13 @@ def load_design(project_root: Path):
         "theta_global": meta["theta_global"],
         "delta_min": meta["delta_min"],
         "K_tr": meta["K_tr"],
+        "w_bar": meta.get("w_bar", 0.01),
+        "v_bar": meta.get("v_bar", 0.01),
         "mode": meta["mode"]
     }
     return design
+
+_SUPPORT_CACHE = {}
 
 def build_H_K_for_support(design, E_indices):
     """
@@ -44,16 +48,27 @@ def build_H_K_for_support(design, E_indices):
     Re-solves the LMI for this H_S to obtain K_S, P_S, epsilon_S.
     If in smoke mode, it provides an uncertified fallback to avoid solver overhead/crashes.
     """
+    w_bar = design["w_bar"]
+    v_bar = design["v_bar"]
+    
+    key = (tuple(sorted(E_indices)), w_bar, v_bar)
+    if key in _SUPPORT_CACHE:
+        return _SUPPORT_CACHE[key]
+        
     E_S = build_E_matrix(NUM_CHANNELS, E_indices)
     H_S = compute_annihilator(E_S)
     
     # Assert exact annihilation
-    assert np.linalg.norm(H_S @ E_S, ord='fro') < 1e-10, "H_S E_S != 0"
+    norm_hs_es = np.linalg.norm(H_S @ E_S, ord='fro')
+    if norm_hs_es >= 1e-10:
+        raise ValueError(f"H_S E_S != 0 (norm: {norm_hs_es}) for support {E_indices}")
     
     A = design["A"]
     C = design["C"]
     gamma = design["gamma"]
     psi_bar = design["psi_bar"]
+    w_bar = design["w_bar"]
+    v_bar = design["v_bar"]
     
     if design.get("mode") == "smoke":
         # Provide uncertified mock for smoke runs
@@ -65,7 +80,9 @@ def build_H_K_for_support(design, E_indices):
         if stat not in ["optimal", "optimal_inaccurate"]:
             raise ValueError(f"LMI failed for support {E_indices}")
         eps_S, rho_S, _, _, _, _, _, _ = compute_ultimate_bound(
-            P_S, Y_S, tau_S, [A], H_S, C, gamma, w_bar=0.01, v_bar=0.01, psi_bar=psi_bar
+            P_S, Y_S, tau_S, [A], H_S, C, gamma, w_bar=w_bar, v_bar=v_bar, psi_bar=psi_bar
         )
         
-    return H_S, K_S, P_S, eps_S
+    res = (H_S, K_S, P_S, eps_S)
+    _SUPPORT_CACHE[key] = res
+    return res

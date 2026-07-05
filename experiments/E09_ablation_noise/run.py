@@ -28,10 +28,14 @@ def main():
     for noise in noise_levels:
         Y_true, flags, E_indices = load_scenario(project_root / "data", 8)
         
-        H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
+        design_abl = design.copy()
+        design_abl["w_bar"] = noise
+        design_abl["v_bar"] = noise
         
-        pi_uio = PI_UIO(sim, H_S, K_S, design["C"], P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
-                        v_bar=noise, w_bar=noise, X_bounds=design["X_bounds"], rho=design["rho"])
+        H_S, K_S, P_S, eps_S = build_H_K_for_support(design_abl, E_indices)
+        
+        pi_uio = PI_UIO(sim, H_S, K_S, design_abl["C"], P_S, epsilon=eps_S, psi_bar_global=design_abl["psi_bar"], 
+                        v_bar=noise, w_bar=noise, X_bounds=design_abl["X_bounds"], rho=design_abl["rho"])
         
         x_true = extract_x_true(Y_true)
         T = len(flags)
