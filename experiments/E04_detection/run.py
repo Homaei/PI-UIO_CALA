@@ -38,10 +38,10 @@ def main():
     C = design["C"]
     
     # Instantiate Detection Baselines
-    chi2 = ChiSquareDetector(threshold=0.5)
-    cvae = CVAEDetector(input_dim=43, latent_dim=10)
-    rf = StructRFDetector(n_estimators=10)
-    dt_ids = DTIDSDetector(sim, C)
+    chi2 = ChiSquareDetector(df_freedom=7, p_val=0.99)
+    cvae = CVAEDetector(input_dim=43, threshold=0.1)
+    rf = StructuralRFDetector()
+    dt_ids = DTIDSDetector()
     
     for seed in range(seeds):
         np.random.seed(seed)
@@ -62,26 +62,39 @@ def main():
             # Dummy control and state
             u = np.ones(16)
             x_est_piuio = np.zeros(7)
+            x_est_wls = np.zeros(7)
+            r_ekf = np.zeros(43)
+            S_inv = np.eye(43)
             
             # Simulate real loop
             for t in range(T):
                 y_a = Y_true[t]
                 
-                _, alarm = chi2.step(y_a)
-                y_pred_c[t] = int(alarm)
+                # PI-UIO provides x_est, r, alarm, theta
+                x_est_uio, r_uio, pi_alarm, _ = pi_uio.step(x_est_piuio, u, y_a)
+                x_est_piuio = x_est_uio
                 
-                _, alarm = cvae.step(y_a)
-                y_pred_cv[t] = int(alarm)
+                # Reconstruct y_pred for DT-IDS based on WLS state
+                y_pred_wls = C @ x_est_wls
                 
-                alarm = rf.step(y_a)
-                y_pred_rf[t] = int(alarm)
+                ctx_chi = {'r_k': r_ekf, 'S_inv': S_inv}
+                score_chi, alarm_chi = chi2.detect(ctx_chi)
                 
-                # DT-IDS relies on x_est from somewhere, pass zero
-                _, alarm = dt_ids.step(np.zeros(7), u, y_a)
-                y_pred_dt[t] = int(alarm)
+                ctx_cvae = {'y_a': y_a}
+                score_cvae, alarm_cvae = cvae.detect(ctx_cvae)
                 
-                x_est_piuio, _, alarm_pi, _ = pi_uio.step(x_est_piuio, u, y_a)
-                y_pred_pi[t] = int(alarm_pi)
+                ctx_rf = {'residual_features': r_uio}
+                score_rf, alarm_rf = rf.detect(ctx_rf)
+                
+                ctx_dt = {'y_a': y_a, 'y_pred': y_pred_wls}
+                score_dt, alarm_dt = dt_ids.detect(ctx_dt)
+                
+                # Using bool to float conversion for metric computation
+                y_pred_c[t] = 1.0 if alarm_chi else 0.0
+                y_pred_cv[t] = 1.0 if alarm_cvae else 0.0
+                y_pred_rf[t] = 1.0 if alarm_rf else 0.0
+                y_pred_dt[t] = 1.0 if alarm_dt else 0.0
+                y_pred_pi[t] = 1.0 if pi_alarm else 0.0  
             
             p, r, f1, auc, d = calc_detection_metrics(flags, y_pred_c, y_pred_c)
             results["$\\chi^2$"]["prec"].append(p); results["$\\chi^2$"]["rec"].append(r); results["$\\chi^2$"]["f1"].append(f1); results["$\\chi^2$"]["auc"].append(auc); results["$\\chi^2$"]["delay"].append(d)
