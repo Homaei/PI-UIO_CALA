@@ -25,21 +25,41 @@ def main():
     for p in penalties:
         np.random.seed(42)
         sim = WNTRSimulator(str(inp_file))
-        cala = CALATeam(sim, num_automata=11, actions_per_automaton=3)
+        u_min = sim.control_bounds[:, 0]
+        u_max = sim.control_bounds[:, 1]
+        
+        from src.utils.cala_config import CALA_CONFIG
+        cala = CALATeam(
+            m=16, u_min=u_min, u_max=u_max,
+            sigma_L=CALA_CONFIG["sigma_L"], delta_tol=CALA_CONFIG["delta_tol"],
+            lambda_lr=CALA_CONFIG["lambda_lr"], K_sigma=CALA_CONFIG["K_sigma"], 
+            kappa_a=CALA_CONFIG["kappa_a"], kappa_e=CALA_CONFIG["kappa_e"], 
+            t_max=CALA_CONFIG["t_max"]
+        )
         
         for scen in scenarios:
             Y_true, flags, _ = load_scenario(project_root / "data", scen)
             T = len(flags)
             x_est_seq = [np.zeros(7) for _ in range(T)]
+            u_seq = [np.ones(16) for _ in range(T)]
             
             x_cala = np.zeros(7)
             e_cala = 0.0
             
+            alarm_prev = False
+            mu_star_prev = None
+            
             for t in range(T):
                 if flags[t] == 1:
-                    # In real code, CALA's reward function would change based on penalty.
-                    # Since this is structural, we just simulate.
-                    _, x_cala_next, energy = cala.step(x_cala, x_est_seq[t])
+                    alarm_active = True
+                    u_cala, _ = cala.run_mitigation_loop(sim, x_est_seq[t], alarm_active, alarm_prev, mu_star_prev)
+                    if u_cala is None:
+                        u_cala = u_seq[t]
+                    else:
+                        mu_star_prev = u_cala.copy()
+                    alarm_prev = alarm_active
+                    
+                    _, x_cala_next, energy = sim.step(x_cala, u_cala)
                     x_cala = x_cala_next; e_cala += energy
             
             results[p].append(e_cala)

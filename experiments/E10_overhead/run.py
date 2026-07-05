@@ -29,7 +29,17 @@ def main():
     
     pi_uio = PI_UIO(sim, H_S, K_S, design["C"], P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
                     v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
-    cala = CALATeam(sim, num_automata=11, actions_per_automaton=3)
+    u_min = sim.control_bounds[:, 0]
+    u_max = sim.control_bounds[:, 1]
+    
+    from src.utils.cala_config import CALA_CONFIG
+    cala = CALATeam(
+        m=16, u_min=u_min, u_max=u_max,
+        sigma_L=CALA_CONFIG["sigma_L"], delta_tol=CALA_CONFIG["delta_tol"],
+        lambda_lr=CALA_CONFIG["lambda_lr"], K_sigma=CALA_CONFIG["K_sigma"], 
+        kappa_a=CALA_CONFIG["kappa_a"], kappa_e=CALA_CONFIG["kappa_e"], 
+        t_max=CALA_CONFIG["t_max"]
+    )
     
     u = np.ones(16)
     y_a = np.zeros(43)
@@ -38,6 +48,9 @@ def main():
     times_uio = []
     times_cala = []
     
+    alarm_prev = False
+    mu_star_prev = u.copy()
+    
     for _ in range(steps):
         t0 = time.perf_counter()
         x_est, _, _, _ = pi_uio.step(x_est, u, y_a)
@@ -45,7 +58,12 @@ def main():
         times_uio.append((t1 - t0) * 1000)
         
         t0 = time.perf_counter()
-        _, _, _ = cala.step(np.zeros(7), x_est)
+        # Evaluate overhead of CALA when triggered
+        alarm_active = True
+        u_cala, _ = cala.run_mitigation_loop(sim, x_est, alarm_active, alarm_prev, mu_star_prev)
+        if u_cala is not None:
+            mu_star_prev = u_cala.copy()
+        alarm_prev = alarm_active
         t1 = time.perf_counter()
         times_cala.append((t1 - t0) * 1000)
         
