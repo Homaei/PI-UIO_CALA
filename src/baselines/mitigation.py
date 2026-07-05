@@ -52,7 +52,7 @@ class CEM_MPC:
         tank_min = self.simulator.state_bounds[:, 0]
         
         for t in range(self.N):
-            x, _ = self.simulator.step(x, u_seq[t])
+            x, _, _ = self.simulator.step(x, u_seq[t])
             nu = np.maximum(0, x - tank_max) + np.maximum(0, tank_min - x)
             cost = np.sum(nu) + 0.01 * np.sum(u_seq[t]) # penalty + energy
             total_cost += cost

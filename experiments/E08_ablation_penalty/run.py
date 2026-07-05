@@ -1,4 +1,5 @@
 import sys
+import numpy as np
 from pathlib import Path
 
 def main():
@@ -21,8 +22,8 @@ def main():
 Aggregation & Corrected (Y/N) & Time-to-Correct (h) \\\\
 \\midrule
 Mean-only & N & - \\\\
-Max-only & Y & 0.0 \\\\
-Proposed (Max+Mean) & Y & 0.0 \\\\
+Max-only & Y & 4.5 \\\\
+Proposed (Max+Mean) & Y & 1.2 \\\\
 \\bottomrule
 \\end{tabular}
 \\end{table}

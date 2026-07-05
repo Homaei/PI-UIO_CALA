@@ -7,6 +7,8 @@ The BATADAL test dataset (`BATADAL_test_dataset.csv`) originally ships without a
 
 **# VERIFY:** The exact start and end hours below are estimated from typical BATADAL test scenario usage. They must be cross-checked against the official "BATADAL: Battle of the Attack Detection Algorithms" publication if precise sample-level evaluation is required.
 
+**WARNING: Attack windows for scenarios 8-14 are UNVERIFIED estimates — not for final paper numbers.**
+
 - **Scenario 8**: `2017-03-01 02:00` to `2017-03-02 16:00` (Attacked: `L_T1`)
 - **Scenario 9**: `2017-03-04 15:00` to `2017-03-06 04:00` (Attacked: `L_T2`)
 - **Scenario 10**: `2017-03-09 09:00` to `2017-03-11 09:00` (Attacked: `L_T3`)
@@ -16,6 +18,9 @@ The BATADAL test dataset (`BATADAL_test_dataset.csv`) originally ships without a
 - **Scenario 14**: `2017-04-02 11:00` to `2017-04-04 11:00` (Attacked: `L_T7`)
 
 *Note: For scenarios 1-7, the windows and channels are dynamically parsed from the `ATT_FLAG` column in `dataset04.csv`.*
+
+## 1.b. Hydraulic Energy Calculation
+- Pump efficiency $\eta = 0.75$ is hardcoded for evaluating real hydraulic pumping power across the network.
 
 ## 2. PLC Grouping for C-Town
 The C-Town network is controlled by 9 PLCs. We map the sensors to these 9 PLCs as follows (to be refined in `scenarios.json` generation):

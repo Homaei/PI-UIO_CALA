@@ -33,8 +33,7 @@ class WNTRSimulator:
         # Identify control variables (Pumps and Valves)
         self.pump_names = self.wn.pump_name_list
         self.valve_names = self.wn.valve_name_list
-        assert len(self.pump_names) == 11, "Expected exactly 11 pumps."
-        assert len(self.valve_names) == 5, "Expected exactly 5 valves."
+        self.node_names = self.wn.junction_name_list
         
         # Identify bounds
         self.state_bounds = self._get_tank_bounds()
@@ -67,9 +66,10 @@ class WNTRSimulator:
         for i, p in enumerate(self.pump_names):
             pump = self.wn.get_link(p)
             pump.base_speed = u[i]
-            # Map speed > 0 to ON status
-            if hasattr(pump, 'status'):
+            try:
                 pump.status = 1 if u[i] > 0 else 0
+            except AttributeError:
+                pass # WNTR handles 0 speed natively
             
         for i, v in enumerate(self.valve_names):
             valve = self.wn.get_link(v)
@@ -107,21 +107,35 @@ class WNTRSimulator:
         # Extract y (SCADA) using exact mapping
         y = self._extract_scada(results, t_step)
         
-        # Extract real pumping energy (Issue 9)
-        # EPANET provides pump energy as 'energy' in link results for pumps.
-        # It's an array of kW or similar. We sum over all pumps at t_step.
+        # Extract real pumping energy (Category B)
         energy_cost = 0.0
-        if 'energy' in results.link:
+        rho_water = 1000.0  # kg/m^3
+        g = 9.81            # m/s^2
+        eta = 0.75          # Pump efficiency
+        
+        if 'energy' in results.link and not results.link['energy'].empty:
             for p in self.pump_names:
                 try:
                     energy_cost += results.link['energy'].loc[t_step, p]
                 except KeyError:
                     pass
         else:
-            # Fallback if energy is not reported: use flow * head proxy or just sum speeds
-            # BATADAL has pump flow. For a proxy we can use pump flows.
             for p in self.pump_names:
-                energy_cost += abs(results.link['flowrate'].loc[t_step, p])
+                try:
+                    q = results.link['flowrate'].loc[t_step, p]
+                    status = results.link['status'].loc[t_step, p]
+                    if status > 0 and q > 0:
+                        pump = self.wn.get_link(p)
+                        start_node = pump.start_node_name
+                        end_node = pump.end_node_name
+                        h_start = results.node['head'].loc[t_step, start_node]
+                        h_end = results.node['head'].loc[t_step, end_node]
+                        h_gain = h_end - h_start
+                        if h_gain > 0:
+                            p_pump = (rho_water * g * q * h_gain) / eta
+                            energy_cost += p_pump * t_step  # Joules
+                except KeyError:
+                    pass
         
         return np.array(x_next), y, energy_cost
         

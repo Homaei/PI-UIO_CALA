@@ -7,3 +7,5 @@ __pycache__/
 Datasets/
 Doc/
 .DS_Store
+venv/
+data/

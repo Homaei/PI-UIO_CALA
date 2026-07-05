@@ -13,7 +13,7 @@ class BaselineEKF:
         
     def step(self, x_est, u, y_a):
         # Predict
-        x_pred, _ = self.simulator.step(x_est, u)
+        x_pred, _, _ = self.simulator.step(x_est, u)
         P_pred = self.A @ self.P @ self.A.T + self.Q
         
         # Update

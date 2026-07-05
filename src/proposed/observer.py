@@ -1,7 +1,7 @@
 import numpy as np
 
 class PI_UIO:
-    def __init__(self, simulator, H, K, C, P, epsilon, psi_bar_global, v_bar, w_bar, X_bounds, psi_bar_v_dict=None):
+    def __init__(self, simulator, H, K, C, P, epsilon, psi_bar_global, v_bar, w_bar, X_bounds, rho, psi_bar_v_dict=None):
         """
         Rule 3.2: PI-UIO observer
         Rule 3.5: Localized psi and Transient handling
@@ -18,6 +18,7 @@ class PI_UIO:
         self.w_bar = w_bar
         
         self.X_bounds = X_bounds
+        self.rho = rho
         self.psi_bar_v_dict = psi_bar_v_dict or {} # Maps cell_idx -> psi_bar_v
         
         # Calculate global theta
@@ -29,11 +30,25 @@ class PI_UIO:
         self.K_tr = self._compute_K_tr()
         
     def _compute_K_tr(self):
-        # We need rho to compute this exactly, but let's assume it's precomputed and passed or we compute an approx.
-        # For simplicity in this mock structure, we return 10. The actual formula is:
-        # sqrt(lmax/lmin) * rho^{k/2} * ||e(0)|| <= 0.1 * epsilon
-        # We will implement the exact formula in the actual experiment script where rho is evaluated.
-        return 50 # Mock value, will be overridden by experiment logic
+        # Bug A3: Exact calculation of K_tr
+        l_min = np.min(np.linalg.eigvalsh(self.P))
+        l_max = np.max(np.linalg.eigvalsh(self.P))
+        
+        # ||e(0)|| = diam(X) / 2
+        diam_X = np.sqrt(np.sum((self.X_bounds[:, 1] - self.X_bounds[:, 0])**2))
+        e0_norm = diam_X / 2.0
+        
+        M = np.sqrt(l_max / l_min) * e0_norm
+        target = 0.1 * self.epsilon
+        
+        if M <= target or self.rho <= 0 or self.rho >= 1:
+            return 0
+            
+        # M * rho^{k/2} <= target
+        # rho^{k/2} <= target / M
+        k_half = np.log(target / M) / np.log(self.rho)
+        K_tr = int(np.ceil(2 * k_half))
+        return max(0, K_tr)
 
     def _get_cell_index(self, x):
         """Rule 3.5: Partition X into 128 cells by splitting each dimension at midpoint."""
@@ -61,8 +76,8 @@ class PI_UIO:
         Predict and update.
         x_safe(k+1) = f(x_safe(k), u(k)) + K ( H y_a(k) - H C x_safe(k) )
         """
-        # Full nonlinear solver prediction
-        x_pred, _ = self.simulator.step(x_safe, u)
+        # Full nonlinear solver prediction (Bug A2)
+        x_pred, _, _ = self.simulator.step(x_safe, u)
         
         # Correction
         # Note: the paper says y_tilde(k) = H y_a(k)

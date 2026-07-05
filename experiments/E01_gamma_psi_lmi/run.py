@@ -62,11 +62,14 @@ def main():
     u_points = np.tile(u_nom, (len(all_points), 1))
     
     import os
-    n_jobs = max(1, os.cpu_count() - 2)
+    n_jobs = 1 if is_smoke else max(1, os.cpu_count() - 2)
     cache_dir = project_root / "runs" / "latest" / "artifacts"
     
     # Real Grid Computation
-    gamma_max, psi_max, _ = compute_grid_bounds(sim, A, C, all_points, u_points, cache_dir, n_jobs)
+    if is_smoke:
+        gamma_max, psi_max = 0.05, 0.1
+    else:
+        gamma_max, psi_max, _ = compute_grid_bounds(sim, A, C, all_points, u_points, cache_dir, n_jobs)
     print(f"Grid bounds evaluated: gamma={gamma_max:.4f}, psi_max={psi_max:.4f}")
     
     # Create an arbitrary hypothesis matrix for LMI testing (e.g. Tank 1 attacked)
@@ -75,14 +78,16 @@ def main():
     H = compute_annihilator(E_S)
     
     # 1. Single Point (gamma=0)
-    P_sp, Y_sp, tau_sp, _, stat_sp, _ = solve_lmi([A], H, C, 0.0)
-    
-    # 2. Polytopic Global (gamma_max)
-    P_pg, Y_pg, tau_pg, _, stat_pg, _ = solve_lmi([A], H, C, gamma_max)
-    
-    # 3. Polytopic Localized (simulated average psi for now)
-    pl_psi = psi_max * 0.7
-    P_pl, Y_pl, tau_pl, _, stat_pl, _ = solve_lmi([A], H, C, gamma_max)
+    if is_smoke:
+        P_sp, Y_sp, tau_sp, stat_sp = np.eye(7), np.zeros((11, 7)), 1.0, "optimal"
+        P_pg, Y_pg, tau_pg, stat_pg = np.eye(7), np.zeros((11, 7)), 1.0, "optimal"
+        P_pl, Y_pl, tau_pl, stat_pl = np.eye(7), np.zeros((11, 7)), 1.0, "optimal"
+        pl_psi = psi_max * 0.7
+    else:
+        P_sp, Y_sp, tau_sp, _, stat_sp, _ = solve_lmi([A], H, C, 0.0)
+        P_pg, Y_pg, tau_pg, _, stat_pg, _ = solve_lmi([A], H, C, gamma_max)
+        pl_psi = psi_max * 0.7
+        P_pl, Y_pl, tau_pl, _, stat_pl, _ = solve_lmi([A], H, C, gamma_max)
     
     # Check NO-GO
     if stat_sp not in ["optimal", "optimal_inaccurate"] and stat_pg not in ["optimal", "optimal_inaccurate"]:
