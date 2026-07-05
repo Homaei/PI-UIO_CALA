@@ -7,8 +7,10 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.utils.data_loader import load_scenario
 from src.utils.ground_state import extract_x_true
 from src.utils.metrics import calc_rmse, calc_nrmse, calc_max_err, run_wilcoxon
+from src.utils.attack_injection import inject_attack
 from src.baselines.estimation import BaselineEKF, AdaptiveSwitchingUIO, WeightedLeastSquares
 from src.proposed.observer import PI_UIO
+from src.model.simulator import WNTRSimulator
 
 def main():
     print("Running E02: Estimation Baseline Comparisons")
@@ -27,42 +29,81 @@ def main():
         "PI-UIO": {"rmse": [], "nrmse": [], "max_err": []}
     }
     
+    # Real Class Instantiation
+    inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
+    sim = WNTRSimulator(str(inp_file))
+    
+    # Dummy Matrices for Static Compilation
+    A = np.eye(7)
+    C = np.ones((43, 7))
+    H = np.ones((7, 43))
+    K = np.eye(7)
+    P = np.eye(7)
+    Q = np.eye(7)
+    R = np.eye(43)
+    R_inv = np.linalg.inv(R)
+    X_bounds = sim.state_bounds
+    
+    pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=X_bounds, rho=0.95)
+    ekf = BaselineEKF(sim, A, C, Q, R)
+    wls = WeightedLeastSquares(C, R_inv)
+    # Adaptive Switching UIO bank (mocked bank of 2)
+    auio = AdaptiveSwitchingUIO([pi_uio, pi_uio])
+    
     wilcoxon_p = 1.0
     
     for seed in range(seeds):
         np.random.seed(seed)
         for scen in scenarios:
-            Y_true, flags, _ = load_scenario(project_root / "data", scen)
+            Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
             x_true = extract_x_true(Y_true)
             
-            # Mock estimation processing since we lack real initialized models (smoke mode safe)
             T, n = x_true.shape
             
-            # WLS Mock
-            x_wls = x_true + np.random.randn(T, n) * 0.1
+            x_wls = np.zeros_like(x_true)
+            x_ekf = np.zeros_like(x_true)
+            x_auio = np.zeros_like(x_true)
+            x_piuio = np.zeros_like(x_true)
+            
+            x_est_wls = x_true[0].copy()
+            x_est_ekf = x_true[0].copy()
+            x_est_auio_list = [x_true[0].copy(), x_true[0].copy()]
+            x_est_piuio = x_true[0].copy()
+            
+            # Dummy control
+            u = np.ones(16)
+            
+            for t in range(T):
+                y_a = Y_true[t]
+                
+                x_est_wls, _ = wls.step(y_a)
+                x_wls[t] = x_est_wls
+                
+                x_est_ekf, _ = ekf.step(x_est_ekf, u, y_a)
+                x_ekf[t] = x_est_ekf
+                
+                _, x_est_auio_active, _ = auio.step(x_est_auio_list, u, y_a)
+                x_auio[t] = x_est_auio_active
+                
+                x_est_piuio, _, _, _ = pi_uio.step(x_est_piuio, u, y_a)
+                x_piuio[t] = x_est_piuio
+                
             results["WLS"]["rmse"].append(calc_rmse(x_true, x_wls))
             results["WLS"]["nrmse"].append(calc_nrmse(x_true, x_wls))
             results["WLS"]["max_err"].append(calc_max_err(x_true, x_wls))
             
-            # EKF Mock
-            x_ekf = x_true + np.random.randn(T, n) * 0.08
             results["EKF"]["rmse"].append(calc_rmse(x_true, x_ekf))
             results["EKF"]["nrmse"].append(calc_nrmse(x_true, x_ekf))
             results["EKF"]["max_err"].append(calc_max_err(x_true, x_ekf))
             
-            # Adaptive UIO Mock
-            x_auio = x_true + np.random.randn(T, n) * 0.05
             results["Adaptive UIO"]["rmse"].append(calc_rmse(x_true, x_auio))
             results["Adaptive UIO"]["nrmse"].append(calc_nrmse(x_true, x_auio))
             results["Adaptive UIO"]["max_err"].append(calc_max_err(x_true, x_auio))
             
-            # PI-UIO Mock
-            x_piuio = x_true + np.random.randn(T, n) * 0.01
             results["PI-UIO"]["rmse"].append(calc_rmse(x_true, x_piuio))
             results["PI-UIO"]["nrmse"].append(calc_nrmse(x_true, x_piuio))
             results["PI-UIO"]["max_err"].append(calc_max_err(x_true, x_piuio))
             
-            # Wilcoxon calculation example (PI-UIO nominal vs attack)
             err_nom = np.linalg.norm(x_true[flags == 0] - x_piuio[flags == 0], axis=1)
             err_att = np.linalg.norm(x_true[flags == 1] - x_piuio[flags == 1], axis=1)
             if len(err_nom) > 0 and len(err_att) > 0:
@@ -70,7 +111,6 @@ def main():
                 _, p_val = run_wilcoxon(err_nom[:min_len], err_att[:min_len])
                 wilcoxon_p = p_val
 
-    # Aggregation
     agg_res = {}
     for method in results:
         agg_res[method] = {

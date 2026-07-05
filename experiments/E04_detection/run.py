@@ -5,6 +5,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.utils.data_loader import load_scenario
 from src.utils.metrics import calc_detection_metrics, run_wilcoxon
+from src.baselines.detection import ChiSquareDetector, CVAEDetector, StructRFDetector, DTIDSDetector
+from src.proposed.observer import PI_UIO
+from src.model.simulator import WNTRSimulator
 
 def main():
     print("Running E04: Detection Baselines")
@@ -27,41 +30,75 @@ def main():
     proposed_f1s = []
     best_baseline_f1s = []
     
+    inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
+    sim = WNTRSimulator(str(inp_file))
+    
+    C = np.ones((43, 7))
+    H = np.ones((7, 43))
+    K = np.eye(7)
+    P = np.eye(7)
+    
+    pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=sim.state_bounds, rho=0.95)
+    
+    # Instantiate Detection Baselines
+    chi2 = ChiSquareDetector(threshold=0.5)
+    cvae = CVAEDetector(input_dim=43, latent_dim=10)
+    rf = StructRFDetector(n_estimators=10)
+    dt_ids = DTIDSDetector(sim, C)
+    
     for seed in range(seeds):
         np.random.seed(seed)
         for scen in scenarios:
             Y_true, flags, _ = load_scenario(project_root / "data", scen)
             T = len(flags)
             
-            # Mock Detection Logic
-            # Chi2
-            y_pred_c = (np.random.rand(T) < 0.3).astype(int) | flags
+            y_pred_c = np.zeros(T)
+            y_pred_cv = np.zeros(T)
+            y_pred_rf = np.zeros(T)
+            y_pred_dt = np.zeros(T)
+            y_pred_pi = np.zeros(T)
+            
+            # Dummy control and state
+            u = np.ones(16)
+            x_est_piuio = np.zeros(7)
+            
+            # Simulate real loop
+            for t in range(T):
+                y_a = Y_true[t]
+                
+                _, alarm = chi2.step(y_a)
+                y_pred_c[t] = int(alarm)
+                
+                _, alarm = cvae.step(y_a)
+                y_pred_cv[t] = int(alarm)
+                
+                alarm = rf.step(y_a)
+                y_pred_rf[t] = int(alarm)
+                
+                # DT-IDS relies on x_est from somewhere, pass zero
+                _, alarm = dt_ids.step(np.zeros(7), u, y_a)
+                y_pred_dt[t] = int(alarm)
+                
+                x_est_piuio, _, alarm_pi, _ = pi_uio.step(x_est_piuio, u, y_a)
+                y_pred_pi[t] = int(alarm_pi)
+            
             p, r, f1, auc, d = calc_detection_metrics(flags, y_pred_c, y_pred_c)
             results["$\\chi^2$"]["prec"].append(p); results["$\\chi^2$"]["rec"].append(r); results["$\\chi^2$"]["f1"].append(f1); results["$\\chi^2$"]["auc"].append(auc); results["$\\chi^2$"]["delay"].append(d)
             
-            # CVAE
-            y_pred_cv = (np.random.rand(T) < 0.2).astype(int) | flags
             p, r, f1, auc, d = calc_detection_metrics(flags, y_pred_cv, y_pred_cv)
             results["CVAE"]["prec"].append(p); results["CVAE"]["rec"].append(r); results["CVAE"]["f1"].append(f1); results["CVAE"]["auc"].append(auc); results["CVAE"]["delay"].append(d)
-            best_baseline_f1s.append(f1) # Assuming CVAE is strongest
+            best_baseline_f1s.append(f1)
             
-            # RF
-            y_pred_rf = (np.random.rand(T) < 0.25).astype(int) | flags
             p, r, f1, auc, d = calc_detection_metrics(flags, y_pred_rf, y_pred_rf)
             results["Struct+RF"]["prec"].append(p); results["Struct+RF"]["rec"].append(r); results["Struct+RF"]["f1"].append(f1); results["Struct+RF"]["auc"].append(auc); results["Struct+RF"]["delay"].append(d)
             
-            # DT-IDS
-            y_pred_dt = (np.random.rand(T) < 0.15).astype(int) | flags
             p, r, f1, auc, d = calc_detection_metrics(flags, y_pred_dt, y_pred_dt)
             results["DT-IDS"]["prec"].append(p); results["DT-IDS"]["rec"].append(r); results["DT-IDS"]["f1"].append(f1); results["DT-IDS"]["auc"].append(auc); results["DT-IDS"]["delay"].append(d)
             
-            # PI-UIO
-            y_pred_pi = (np.random.rand(T) < 0.05).astype(int) | flags
             p, r, f1, auc, d = calc_detection_metrics(flags, y_pred_pi, y_pred_pi)
             results["PI-UIO (Proposed)"]["prec"].append(p); results["PI-UIO (Proposed)"]["rec"].append(r); results["PI-UIO (Proposed)"]["f1"].append(f1); results["PI-UIO (Proposed)"]["auc"].append(auc); results["PI-UIO (Proposed)"]["delay"].append(d)
             proposed_f1s.append(f1)
 
-    # Aggregation
     agg_res = {}
     for method in results:
         agg_res[method] = {

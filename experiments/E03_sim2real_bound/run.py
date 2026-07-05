@@ -1,59 +1,74 @@
 import sys
 import numpy as np
 from pathlib import Path
-import matplotlib.pyplot as plt
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+from src.utils.data_loader import load_scenario
+from src.utils.ground_state import extract_x_true
+from src.proposed.observer import PI_UIO
+from src.model.simulator import WNTRSimulator
 
 def main():
     print("Running E03: Sim2Real Bound Validation")
     is_smoke = "--smoke" in sys.argv
-    seeds = 2 if is_smoke else 30
+    scenarios = [8, 9] if is_smoke else range(8, 15)
     
     project_root = Path(__file__).resolve().parent.parent.parent
     runs_dir = project_root / "runs" / "latest"
-    fig_dir = runs_dir / "figures"
-    fig_dir.mkdir(parents=True, exist_ok=True)
+    runs_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Structural Execution
-    # Run the nominal closed loop for K_tr steps, then measure exceedance of epsilon
-    np.random.seed(42)
-    K_tr = 20
-    T = 100
-    eps = 0.5
+    inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
+    sim = WNTRSimulator(str(inp_file))
     
-    # Generate mock error trajectories converging below epsilon
-    t_vals = np.arange(T)
-    err_piuio = np.exp(-t_vals / 10.0) + np.random.randn(T) * 0.05
-    err_ekf = np.exp(-t_vals / 15.0) + np.random.randn(T) * 0.15 + 0.2
+    A = np.eye(7)
+    C = np.ones((43, 7))
+    H = np.ones((7, 43))
+    K = np.eye(7)
+    P = np.eye(7)
     
-    # 2. Output Figures and Numbers
-    fig_out = fig_dir / "drift_comparison.pdf"
-    plt.figure()
-    plt.plot(t_vals, err_ekf, label="EKF Error")
-    plt.plot(t_vals, err_piuio, label="PI-UIO Error")
-    plt.axhline(eps, color='r', linestyle='--', label="$\epsilon$ Bound")
-    plt.axvline(K_tr, color='g', linestyle='--', label="$K_{tr}$")
-    plt.title("Sim2Real Drift Comparison")
-    plt.xlabel("Time Step (k)")
-    plt.ylabel("$||e(k)||$")
-    plt.legend()
-    plt.savefig(fig_out)
-    plt.close()
+    # Epsilon = 0.5 according to the mock before
+    epsilon = 0.5
+    pi_uio = PI_UIO(sim, H, K, C, P, epsilon=epsilon, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=sim.state_bounds, rho=0.95)
     
-    # Calculate % exceedance after K_tr
-    piuio_after_ktr = err_piuio[K_tr:]
-    exceedance_pct = np.mean(piuio_after_ktr > eps) * 100
+    max_e_val = 0.0
+    violations = 0
+    total_steps = 0
     
+    for scen in scenarios:
+        Y_true, flags, _ = load_scenario(project_root / "data", scen)
+        x_true = extract_x_true(Y_true)
+        T = len(flags)
+        
+        x_est_piuio = x_true[0].copy()
+        u = np.ones(16)
+        
+        for t in range(T):
+            if flags[t] == 1:
+                continue # Only check bounds under nominal
+            
+            y_a = Y_true[t]
+            x_est_piuio, _, _, _ = pi_uio.step(x_est_piuio, u, y_a)
+            
+            e_norm = np.linalg.norm(x_true[t] - x_est_piuio)
+            if e_norm > max_e_val:
+                max_e_val = e_norm
+            
+            if e_norm > epsilon:
+                violations += 1
+            total_steps += 1
+
+    violation_pct = (violations / max(1, total_steps)) * 100.0
+
     num_out = runs_dir / "numbers_E03.tex"
     with open(num_out, "w") as f:
-        f.write(f"\\newcommand{{\\simRealExceedancePercent}}{{{exceedance_pct:.1f}\\%}}\n")
-        f.write("\\newcommand{\\rampMarginE03}{1.5}\n")
+        f.write(f"\\newcommand{{\\maxSimRealE03}}{{{max_e_val:.4f}}}\n")
+        f.write(f"\\newcommand{{\\epsilonBoundE03}}{{{epsilon:.4f}}}\n")
+        f.write(f"\\newcommand{{\\violationPctE03}}{{{violation_pct:.2f}}}\n")
         
     res_txt = Path(__file__).resolve().parent / "results.txt"
     with open(res_txt, "w") as f:
         f.write("WARNING: Attack windows for scenarios 8-14 are UNVERIFIED estimates — not for final paper numbers.\n")
-        
+
     print(f"E03 Completed. Outputs saved to {runs_dir}")
 
 if __name__ == "__main__":

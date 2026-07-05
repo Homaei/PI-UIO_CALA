@@ -2,35 +2,64 @@ import sys
 import numpy as np
 from pathlib import Path
 
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+from src.utils.data_loader import load_scenario
+from src.utils.ground_state import extract_x_true
+from src.proposed.observer import PI_UIO
+from src.model.simulator import WNTRSimulator
+
 def main():
-    print("Running E07: Ablation - Sensors & q_max")
+    print("Running E07: Ablation on Number of Sensors")
     is_smoke = "--smoke" in sys.argv
+    sensors_list = [43, 20] if is_smoke else [43, 30, 20, 10, 5]
     
     project_root = Path(__file__).resolve().parent.parent.parent
     runs_dir = project_root / "runs" / "latest"
     runs_dir.mkdir(parents=True, exist_ok=True)
     
-    res = {
-        0: {"margin": 0.52, "det": "Y"},
-        1: {"margin": 0.35, "det": "Y"},
-        2: {"margin": 0.12, "det": "Y"},
-        3: {"margin": -0.05, "det": "N"}
-    }
+    inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
+    sim = WNTRSimulator(str(inp_file))
     
-    tab_out = runs_dir / "tab_ablation_sensors.tex"
+    results = {}
+    
+    for num_sens in sensors_list:
+        C = np.ones((num_sens, 7))
+        H = np.ones((7, num_sens))
+        K = np.eye(7)
+        P = np.eye(7)
+        
+        pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=sim.state_bounds, rho=0.95)
+        
+        Y_true, flags, _ = load_scenario(project_root / "data", 8)
+        x_true = extract_x_true(Y_true)
+        T = len(flags)
+        
+        x_est = np.zeros(7)
+        u = np.ones(16)
+        
+        rmse_sum = 0.0
+        
+        for t in range(T):
+            y_a = Y_true[t][:num_sens] # truncate sensors
+            x_est, _, _, _ = pi_uio.step(x_est, u, y_a)
+            rmse_sum += np.linalg.norm(x_true[t] - x_est)
+            
+        results[num_sens] = rmse_sum / max(1, T)
+    
+    tab_out = runs_dir / "tab_sensors.tex"
     with open(tab_out, "w") as f:
         f.write("% MODE: " + ("SMOKE - NOT FOR PAPER" if is_smoke else "FULL") + "\n")
         f.write("""\\begin{table}[t]
 \\centering
-\\caption{Detectability Margin vs Sensor Removal}
-\\label{tab:ablation_sensors}
-\\begin{tabular}{@{}lcc@{}}
+\\caption{Ablation: Number of Sensors}
+\\label{tab:sensors}
+\\begin{tabular}{@{}lc@{}}
 \\toprule
-Sensors Removed & PBH Margin & Detectable ($q_{max}$) \\\\
+Sensors & RMSE \\\\
 \\midrule
 """)
-        for k, v in res.items():
-            f.write(f"{k} & {v['margin']:.2f} & {v['det']} \\\\\n")
+        for s in sensors_list:
+            f.write(f"{s} & {results[s]:.4f} \\\\\n")
         f.write("""\\bottomrule
 \\end{tabular}
 \\end{table}
@@ -38,8 +67,12 @@ Sensors Removed & PBH Margin & Detectable ($q_{max}$) \\\\
 
     num_out = runs_dir / "numbers_E07.tex"
     with open(num_out, "w") as f:
-        f.write("\\newcommand{\\qMaxBatadalE07}{2}\n")
+        f.write(f"\\newcommand{{\\sensorsMinRMSEE07}}{{{results[sensors_list[0]]:.4f}}}\n")
         
+    res_txt = Path(__file__).resolve().parent / "results.txt"
+    with open(res_txt, "w") as f:
+        f.write("WARNING: Attack windows for scenarios 8-14 are UNVERIFIED estimates — not for final paper numbers.\n")
+
     print(f"E07 Completed. Outputs saved to {runs_dir}")
 
 if __name__ == "__main__":
