@@ -109,23 +109,31 @@ def verify_and_setup_data():
         {"attacked_channels": ["L_T5"], "plc_group": "PLC5"}  # 7
     ]
     
+    from src.utils.data_loader import validate_scenario_schema
+    
     scenarios = {}
     for i in range(min(7, len(start_times))):
         sid = str(i + 1)
-        scenarios[sid] = {
+        scen_dict = {
             "window": [start_times[i], end_times[i]],
             "attacked_channels": TRAIN_ATTACKS[i]["attacked_channels"],
             "E_indices": get_channel_indices(TRAIN_ATTACKS[i]["attacked_channels"]),
-            "plc_group": TRAIN_ATTACKS[i]["plc_group"]
+            "plc_group": TRAIN_ATTACKS[i]["plc_group"],
+            "verified": True  # Scenarios 1-7 are verified from ATT_FLAG
         }
+        validate_scenario_schema(scen_dict)
+        scenarios[sid] = scen_dict
         
     for sid, scen in OFFICIAL_BATADAL_ATTACKS.items():
-        scenarios[sid] = {
+        scen_dict = {
             "window": scen["window"],
             "attacked_channels": scen["attacked_channels"],
             "E_indices": get_channel_indices(scen["attacked_channels"]),
-            "plc_group": scen["plc_group"]
+            "plc_group": scen["plc_group"],
+            "verified": False  # Scenarios 8-14 are unverified estimates
         }
+        validate_scenario_schema(scen_dict)
+        scenarios[sid] = scen_dict
         
     scenarios_path = batadal_dir / "scenarios.json"
     with open(scenarios_path, "w") as f:
