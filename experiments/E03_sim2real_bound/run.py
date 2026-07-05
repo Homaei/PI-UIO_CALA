@@ -20,22 +20,21 @@ def main():
     inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
     sim = WNTRSimulator(str(inp_file))
     
-    A = np.eye(7)
-    C = np.ones((43, 7))
-    H = np.ones((7, 43))
-    K = np.eye(7)
-    P = np.eye(7)
-    
-    # Epsilon = 0.5 according to the mock before
-    epsilon = 0.5
-    pi_uio = PI_UIO(sim, H, K, C, P, epsilon=epsilon, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=sim.state_bounds, rho=0.95)
+    from src.utils.design_loader import load_design, build_H_K_for_support
+    design = load_design(project_root)
+    C = design["C"]
     
     max_e_val = 0.0
     violations = 0
     total_steps = 0
     
     for scen in scenarios:
-        Y_true, flags, _ = load_scenario(project_root / "data", scen)
+        Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
+        
+        H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
+        pi_uio = PI_UIO(sim, H_S, K_S, C, P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
+                        v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
+        
         x_true = extract_x_true(Y_true)
         T = len(flags)
         

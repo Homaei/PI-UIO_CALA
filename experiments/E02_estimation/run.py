@@ -33,22 +33,21 @@ def main():
     inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
     sim = WNTRSimulator(str(inp_file))
     
-    # Dummy Matrices for Static Compilation
-    A = np.eye(7)
-    C = np.ones((43, 7))
-    H = np.ones((7, 43))
-    K = np.eye(7)
-    P = np.eye(7)
+    # Load Design Artifacts
+    from src.utils.design_loader import load_design, build_H_K_for_support
+    design = load_design(project_root)
+    
+    # E02 uses PI_UIO but its H and K vary by scenario, so we must instantiate per-scenario.
+    # We will just prepare WLS and EKF using the real matrices.
+    A = design["A"]
+    C = design["C"]
+    
     Q = np.eye(7)
     R = np.eye(43)
     R_inv = np.linalg.inv(R)
-    X_bounds = sim.state_bounds
     
-    pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=X_bounds, rho=0.95)
     ekf = BaselineEKF(sim, A, C, Q, R)
     wls = WeightedLeastSquares(C, R_inv)
-    # Adaptive Switching UIO bank (mocked bank of 2)
-    auio = AdaptiveSwitchingUIO([pi_uio, pi_uio])
     
     wilcoxon_p = 1.0
     
@@ -56,6 +55,12 @@ def main():
         np.random.seed(seed)
         for scen in scenarios:
             Y_true, flags, E_indices = load_scenario(project_root / "data", scen)
+            
+            H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
+            pi_uio = PI_UIO(sim, H_S, K_S, C, P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
+                            v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
+            auio = AdaptiveSwitchingUIO([pi_uio, pi_uio])
+            
             x_true = extract_x_true(Y_true)
             
             T, n = x_true.shape

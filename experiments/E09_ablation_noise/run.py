@@ -22,15 +22,17 @@ def main():
     
     results = {}
     
+    from src.utils.design_loader import load_design, build_H_K_for_support
+    design = load_design(project_root)
+    
     for noise in noise_levels:
-        C = np.ones((43, 7))
-        H = np.ones((7, 43))
-        K = np.eye(7)
-        P = np.eye(7)
+        Y_true, flags, E_indices = load_scenario(project_root / "data", 8)
         
-        pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=noise, w_bar=noise, X_bounds=sim.state_bounds, rho=0.95)
+        H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
         
-        Y_true, flags, _ = load_scenario(project_root / "data", 8)
+        pi_uio = PI_UIO(sim, H_S, K_S, design["C"], P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
+                        v_bar=noise, w_bar=noise, X_bounds=design["X_bounds"], rho=design["rho"])
+        
         x_true = extract_x_true(Y_true)
         T = len(flags)
         

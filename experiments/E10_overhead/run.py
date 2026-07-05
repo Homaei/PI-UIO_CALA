@@ -21,12 +21,14 @@ def main():
     inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
     sim = WNTRSimulator(str(inp_file))
     
-    C = np.ones((43, 7))
-    H = np.ones((7, 43))
-    K = np.eye(7)
-    P = np.eye(7)
+    from src.utils.design_loader import load_design, build_H_K_for_support
+    design = load_design(project_root)
+    # Using Scenario 8 for typical H_S
+    Y_true, flags, E_indices = load_scenario(project_root / "data", 8)
+    H_S, K_S, P_S, eps_S = build_H_K_for_support(design, E_indices)
     
-    pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=sim.state_bounds, rho=0.95)
+    pi_uio = PI_UIO(sim, H_S, K_S, design["C"], P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
+                    v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
     cala = CALATeam(sim, num_automata=11, actions_per_automaton=3)
     
     u = np.ones(16)

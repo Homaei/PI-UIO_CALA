@@ -20,17 +20,28 @@ def main():
     inp_file = project_root / "data" / "BATADAL" / "BATADAL_network.inp"
     sim = WNTRSimulator(str(inp_file))
     
+    from src.utils.design_loader import load_design, build_H_K_for_support
+    base_design = load_design(project_root)
+    
     results = {}
     
     for num_sens in sensors_list:
-        C = np.ones((num_sens, 7))
-        H = np.ones((7, num_sens))
-        K = np.eye(7)
-        P = np.eye(7)
+        design = base_design.copy()
+        design["C"] = design["C"][:num_sens, :]
         
-        pi_uio = PI_UIO(sim, H, K, C, P, epsilon=0.5, psi_bar_global=0.1, v_bar=0.01, w_bar=0.01, X_bounds=sim.state_bounds, rho=0.95)
+        Y_true, flags, E_indices = load_scenario(project_root / "data", 8)
         
-        Y_true, flags, _ = load_scenario(project_root / "data", 8)
+        # Filter E_indices that fall outside the truncated sensors
+        valid_E = [e for e in E_indices if e < num_sens]
+        if not valid_E:
+            results[num_sens] = 0.0
+            continue
+            
+        H_S, K_S, P_S, eps_S = build_H_K_for_support(design, valid_E)
+        
+        pi_uio = PI_UIO(sim, H_S, K_S, design["C"], P_S, epsilon=eps_S, psi_bar_global=design["psi_bar"], 
+                        v_bar=0.01, w_bar=0.01, X_bounds=design["X_bounds"], rho=design["rho"])
+        
         x_true = extract_x_true(Y_true)
         T = len(flags)
         
