@@ -2,7 +2,7 @@ import platform
 import psutil
 import torch
 import sys
-import pkg_resources
+
 from pathlib import Path
 
 def log_environment(output_path: Path):
@@ -36,11 +36,13 @@ def log_environment(output_path: Path):
     
     required_packages = ["numpy", "scipy", "pandas", "wntr", "cvxpy", "mosek", "scikit-learn", "torch", "matplotlib", "tqdm", "joblib"]
     
+    import importlib.metadata
+    
     for pkg in required_packages:
         try:
-            version = pkg_resources.get_distribution(pkg).version
+            version = importlib.metadata.version(pkg)
             lines.append(f"{pkg}=={version}")
-        except pkg_resources.DistributionNotFound:
+        except importlib.metadata.PackageNotFoundError:
             lines.append(f"{pkg}==NOT FOUND")
             
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -38,7 +38,8 @@ def main():
     run_step("Data Setup", Path("setup_data.py"))
     
     # Phase 1.5: Unit Tests
-    run_step("Unit Tests", Path("-m"), ["pytest", "tests/"])
+    print(f"\n{'='*60}\nRUNNING STEP: Unit Tests\n{'='*60}")
+    subprocess.run([sys.executable, "-m", "pytest", "tests/"], check=True)
     
     # Pipeline experiments
     experiments = [
