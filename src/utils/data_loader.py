@@ -2,16 +2,15 @@ import pandas as pd
 import numpy as np
 import json
 from pathlib import Path
-from src.model.scada_spec import BATADAL_COLUMNS
+from src.model.scada_spec import BATADAL_COLUMNS, SCENARIO_SCHEMA_KEYS
 
 def validate_scenario_schema(scen_dict):
     """
     Pure schema check for scenarios.json entries to prevent drift.
     """
-    required_keys = {"window", "attacked_channels", "E_indices", "plc_group", "verified"}
     if not isinstance(scen_dict, dict):
         raise TypeError(f"Scenario must be a dictionary, got {type(scen_dict)}")
-    missing = required_keys - set(scen_dict.keys())
+    missing = SCENARIO_SCHEMA_KEYS - set(scen_dict.keys())
     if missing:
         raise ValueError(f"Scenario missing required keys: {missing}")
     if len(scen_dict["window"]) != 2:
