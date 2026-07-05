@@ -40,3 +40,6 @@ def assert_dims(C: np.ndarray, E: np.ndarray, H: np.ndarray, K: np.ndarray):
         assert H.shape == (p - q, p), f"H shape mismatch. Expected ({p-q}, {p}), got {H.shape}"
     if K is not None:
         assert K.shape == (n, p - q), f"K shape mismatch. Expected ({n}, {p-q}), got {K.shape}"
+
+# Single source of truth for scenario JSON schema required keys
+SCENARIO_SCHEMA_KEYS = {"window", "attacked_channels", "E_indices", "plc_group", "verified"}

@@ -109,6 +109,7 @@ def verify_and_setup_data():
         {"attacked_channels": ["L_T5"], "plc_group": "PLC5"}  # 7
     ]
     
+    from src.model.scada_spec import BATADAL_COLUMNS, get_channel_indices, SCENARIO_SCHEMA_KEYS
     from src.utils.data_loader import validate_scenario_schema
     
     scenarios = {}
@@ -136,6 +137,11 @@ def verify_and_setup_data():
         scenarios[sid] = scen_dict
         
     scenarios_path = batadal_dir / "scenarios.json"
+    
+    # Pre-write consistency assert against the shared schema
+    for sid, scen_dict in scenarios.items():
+        assert set(scen_dict.keys()).issuperset(SCENARIO_SCHEMA_KEYS), f"Scenario {sid} missing canonical keys!"
+        
     with open(scenarios_path, "w") as f:
         json.dump(scenarios, f, indent=4)
         
